@@ -12,22 +12,21 @@ class GUI(QMainWindow):
     def initUI(self):
         self.setStyleSheet("""
             QMainWindow {
-                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #F5F5F5, stop:1 #4ca1af);
-                color: #000000;
+                background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #00416A, stop:1 #E4E5E6);
                 font-family: "Roboto", sans-serif;
                 font-size: 18px;
             }
 
             QLabel {
-                color: #000000;
+                color: White;
                 font-size: 18px;
                 font-weight: bold;
                 font-family: "Roboto", sans-serif;
                 padding: 5px;
             }
             QLineEdit {
-            background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #F5F5F5, stop:1 #4ca1af);
-            color: #00000; /*TEXT COLOR*/
+            background: White;
+            color: black; /*TEXT COLOR*/
             font-weight: bold;
             font-family: "Roboto", sans-serif;
             font-size : 15px;
@@ -39,7 +38,7 @@ class GUI(QMainWindow):
             border: 1px solid #3498db;  /* Focus color */
             }
             QPushButton {
-            background: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 #F5F5F5, stop:1 #4ca1af);
+            background: White;
             color: black;
             font-weight: bold;
             font-family: "Roboto", sans-serif;
@@ -63,8 +62,9 @@ class GUI(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
+        layout.setAlignment(Qt.AlignTop)
 
-        # Horizontal layout for folder selection
+        # Horizontal layout 
         self.horizontal_layout = QHBoxLayout()
         layout.addLayout(self.horizontal_layout)
 
@@ -80,6 +80,7 @@ class GUI(QMainWindow):
         self.horizontal_layout.addWidget(browse_button)
 
         submit_button = QPushButton("Submit")
+        submit_button.setIcon(qta.icon('fa5s.check'))
         submit_button.clicked.connect(self.handle_submit)
         self.horizontal_layout.addWidget(submit_button)
 
