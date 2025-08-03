@@ -1,66 +1,78 @@
-import os
-import shutil
+# scanInvoice.py
+from PySide6.QtCore import QObject, Signal
 import pytesseract
-from pdf2image import convert_from_path
 import re
+from pathlib import Path
+from pdf2image import convert_from_path
 from PIL import Image
 
-invoices = {}
-output_base = 'separated_invoices'
-last_used_invoice_number = None
 
+class InvoiceScanner(QObject):
+    finished = Signal()
+    progress = Signal(int)
 
-pdf_path = "C:\\Users\\lemeo\\Downloads\\test_handwritten.pdf"
+    def __init__(self, pdf_path):
+        super().__init__()
+        self.pdf_path = pdf_path
 
-# Convert PDF to list of images (one per page)
-pages = convert_from_path(pdf_path)
+    def run(self):
+        try:
+            output_base = Path.home() / "Downloads" / "separated_invoices"
+            output_base.mkdir(parents=True, exist_ok=True)
 
-for i, page_image in enumerate(pages):
-    try:
-        text = pytesseract.image_to_string(page_image)
-        print(f"--- Page {i + 1} ---\n{text}\n")
+            invoices = {}
+            last_used_invoice_number = None
 
-        # Match invoice pattern
-        match = re.search(r"HAWB:([A-Z]+-\d+(?:-[A-Z]+)?)P[a-zA-Z]{2,}:", text)
+            pages = convert_from_path(self.pdf_path)
+            total_pages = len(pages)
 
-        if match:
-            invoice_num = match.group(1)
-            last_used_invoice_number = invoice_num
-            print(f"✅ Invoice found on page {i + 1}: {invoice_num}")
-        elif last_used_invoice_number:
-            invoice_num = last_used_invoice_number
-            print(f"Using last known invoice number for page {i + 1}: {invoice_num}")
-        else:
-            print(f"Invoice number not found on page {i + 1}, and no previous invoice to use.")
-            continue
+            for i, page_image in enumerate(pages):
+                try:
+                    text = pytesseract.image_to_string(page_image)
+                    print(f"--- Page {i + 1} ---\n{text}\n")
 
-        invoices.setdefault(invoice_num, []).append((i, page_image))
-    except Exception as e:
-        print(f"Error on page {i + 1}: {e}")
+                    # Extract invoice number from OCR text
+                    match = re.search(r"HAWB:([A-Z]+-\d+(?:-[A-Z]+)?)P[a-zA-Z]{2,}:", text)
+                    if match:
+                        invoice_num = match.group(1)
+                        last_used_invoice_number = invoice_num
+                        print(f"✅ Invoice found on page {i + 1}: {invoice_num}")
+                    elif last_used_invoice_number:
+                        invoice_num = last_used_invoice_number
+                        print(f"Using last known invoice number for page {i + 1}: {invoice_num}")
+                    else:
+                        print(f"Invoice number not found on page {i + 1}, and no previous invoice to use.")
+                        continue
 
-# Save PNGs and then convert to a single PDF per invoice group
-for invoice_num, pages in invoices.items():
-    folder_path = os.path.join(output_base, invoice_num)
-    os.makedirs(folder_path, exist_ok=True)
+                    invoices.setdefault(invoice_num, []).append((i, page_image))
+                except Exception as e:
+                    print(f"Error on page {i + 1}: {e}")
 
-    image_paths = []
+                # Emit progress percentage
+                percent_complete = int(((i + 1) / total_pages) * 100)
+                self.progress.emit(percent_complete)
 
-    for i, image in pages:
-        image_path = os.path.join(folder_path, f"page_{i+1}.png")
-        image.save(image_path)
-        image_paths.append(image_path)
+            # Save grouped pages
+            for invoice_num, pages in invoices.items():
+                safe_invoice = re.sub(r'[\\/*?:"<>|]', "_", invoice_num)  # sanitize folder name
+                folder_path = output_base / safe_invoice
+                folder_path.mkdir(parents=True, exist_ok=True)
 
-    # Convert saved PNGs to PDF
-    if image_paths:
-        pdf_path = os.path.join(folder_path, f"{invoice_num}.pdf")
-        pil_images = [Image.open(p).convert("RGB") for p in image_paths]
-        pil_images[0].save(pdf_path, save_all=True, append_images=pil_images[1:])
-        print(f"📄 Created PDF for invoice {invoice_num}: {pdf_path}")
+                image_paths = []
 
-# Summary Output
-print("\nGrouped Invoice Pages:")
-for invoice_num, pages in invoices.items():
-    page_numbers = [i + 1 for i, _ in pages]
-    print(f"Invoice: {invoice_num} — Pages: {page_numbers}")
+                for i, image in pages:
+                    image_path = folder_path / f"page_{i+1}.png"
+                    image.save(image_path)
+                    image_paths.append(image_path)
 
-print("\n✅ Done separating, saving, and generating PDFs.")
+                if image_paths:
+                    pdf_output_path = folder_path / f"{safe_invoice}.pdf"
+                    pil_images = [Image.open(p).convert("RGB") for p in image_paths]
+                    pil_images[0].save(pdf_output_path, save_all=True, append_images=pil_images[1:])
+                    print(f"📄 Created PDF for invoice {invoice_num}: {pdf_output_path}")
+
+            print("\n✅ Done separating, saving, and generating PDFs.")
+        except Exception as e:
+            print(f"Error during scanning: {e}")
+        finally:
+            self.finished.emit()
