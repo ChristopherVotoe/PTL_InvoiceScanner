@@ -16,11 +16,11 @@ from PIL.ImageQt import ImageQt
 from pypdf import PdfReader, PdfWriter
 
 
-OUTPUT_BASE = Path.home() / "Downloads" / "separated_invoices"
+OUTPUT_BASE = Path.home() / "Downloads" / "PrimeTimeLogistics_Invoices"
 
 
 # ---------------------------
-# Worker: render PDF to thumbnails (so UI doesn’t freeze)
+#render PDF to thumbnails (so UI doesn’t freeze)
 # ---------------------------
 class RenderWorker(QObject):
     finished = Signal(list)          # list of QPixmap thumbnails
@@ -70,12 +70,12 @@ class InvoiceSorter(QMainWindow):
         # Track how many times each page has been used (0-based index -> count)
         self.page_use_counts: dict[int, int] = {}
 
-        # Preview
+
         self.preview_zoom = 1.0
         self.preview_cache: dict[tuple[int, int], QPixmap] = {}  # (page_index, dpi) -> QPixmap
         self.preview_dpi = 240
 
-        # Year selection (defaults to 2026)
+
         self.selected_year = "2026"
 
         # stacked screens
@@ -116,7 +116,7 @@ class InvoiceSorter(QMainWindow):
         btn_browse.clicked.connect(self.browse_pdf)
         row.addWidget(btn_browse)
 
-        btn_load = QPushButton("Load & Render Thumbnails")
+        btn_load = QPushButton("Load Files")
         btn_load.clicked.connect(self.load_pdf)
         row.addWidget(btn_load)
 
@@ -128,13 +128,13 @@ class InvoiceSorter(QMainWindow):
         self.status = QLabel("")
         layout.addWidget(self.status)
 
-        hint = QLabel(
-            "Tip: Thumbnails are low-res for speed.\n"
-            "Click a page to preview it at high resolution, then check pages and Save.\n"
-            "Pages can be reused; the app tracks how many times each page was used."
-        )
-        hint.setStyleSheet("opacity: 0.8;")
-        layout.addWidget(hint)
+        # hint = QLabel(
+        #     "Tip: Thumbnails are low-res for speed.\n"
+        #     "Click a page to preview it at high resolution, then check pages and Save.\n"
+        #     "Pages can be reused; the app tracks how many times each page was used."
+        # )
+        # hint.setStyleSheet("opacity: 0.8;")
+        # layout.addWidget(hint)
 
         return w
 
@@ -150,7 +150,7 @@ class InvoiceSorter(QMainWindow):
             return
 
         self.pdf_path = path
-        self.status.setText("Rendering thumbnails...")
+        self.status.setText("Rendering Files...")
         self.progress.setVisible(True)
         self.progress.setValue(0)
 
@@ -217,9 +217,9 @@ class InvoiceSorter(QMainWindow):
         self.airway_input.setPlaceholderText('Example: LAX-904991')
         top_row.addWidget(self.airway_input)
 
-        btn_select_all = QPushButton("Select All")
-        btn_select_all.clicked.connect(self.select_all_visible)
-        top_row.addWidget(btn_select_all)
+        # btn_select_all = QPushButton("Select All")
+        # btn_select_all.clicked.connect(self.select_all_visible)
+        # top_row.addWidget(btn_select_all)
 
         btn_clear = QPushButton("Clear Selection")
         btn_clear.clicked.connect(self.clear_selection)
@@ -264,11 +264,21 @@ class InvoiceSorter(QMainWindow):
         self.client_group.setExclusive(True)
 
         self.client_checks: dict[str, QCheckBox] = {}
-        for name in ["ALG", "DSV", "ICAT", "ROCKIT CARGO", "RXO"]:
+        for name in ["ALG", "DSV", "ICAT", "ROCKIT CARGO", "RXO","Other"]:
             cb = QCheckBox(name)
             self.client_group.addButton(cb)
             self.client_checks[name] = cb
             client_row.addWidget(cb)
+
+        # --- "Other" text input
+        self.other_input = QLineEdit()
+        self.other_input.setPlaceholderText("Other client name...")
+        self.other_input.setEnabled(False)
+        self.other_input.setFixedWidth(220)  # optional
+        client_row.addWidget(self.other_input)
+
+        # When client selection changes, toggle the textbox
+        self.client_group.buttonToggled.connect(self.on_client_toggled)
 
         self.client_checks["ALG"].setChecked(True)
         client_row.addStretch(1)
@@ -291,10 +301,12 @@ class InvoiceSorter(QMainWindow):
         right_layout = QVBoxLayout(right)
 
         preview_controls = QHBoxLayout()
+        self.btn_select_all = QPushButton("Select All")
         self.btn_prev = QPushButton("Prev")
         self.btn_next = QPushButton("Next")
         self.btn_zoom_out = QPushButton("Zoom -")
         self.btn_zoom_in = QPushButton("Zoom +")
+        preview_controls.addWidget(self.btn_select_all)
         preview_controls.addWidget(self.btn_prev)
         preview_controls.addWidget(self.btn_next)
         preview_controls.addSpacing(12)
@@ -325,11 +337,22 @@ class InvoiceSorter(QMainWindow):
         self.btn_zoom_out.clicked.connect(lambda: self.change_zoom(0.8))
         self.btn_next.clicked.connect(self.next_page)
         self.btn_prev.clicked.connect(self.prev_page)
+        self.btn_select_all.clicked.connect(self.select_all_visible)
 
         # apply default year highlight
         self._update_year_buttons()
 
         return w
+
+    def on_client_toggled(self, button, checked: bool):
+        if not checked:
+            return
+        is_other = (button.text() == "Other")
+        self.other_input.setEnabled(is_other)
+        if is_other:
+            self.other_input.setFocus()
+            self.other_input.selectAll()
+
 
     def set_year(self, year: str):
         self.selected_year = year
@@ -433,15 +456,27 @@ class InvoiceSorter(QMainWindow):
                 checked.append(int(item.data(Qt.UserRole)))
         return sorted(checked)
 
+    def _sanitize_folder_name(self, name: str) -> str:
+        name = name.strip()
+        if not name:
+            return ""
+
+        return "".join(c if (c.isalnum() or c in " -_().") else "_" for c in name).strip()
+
     def _get_selected_client_folder(self) -> str:
         for name, cb in self.client_checks.items():
             if cb.isChecked():
+                if name == "Other":
+                    custom = self._sanitize_folder_name(self.other_input.text())
+                    return custom
                 return name
         return "ALG"
 
     def save_selected_pages(self):
-        if not self.reader:
-            QMessageBox.warning(self, "No PDF loaded", "Go back and load a PDF first.")
+        client_folder = self._get_selected_client_folder()
+        if not client_folder:
+            QMessageBox.warning(self, "Missing client name", "You selected 'Other' — please type a client name.")
+            self.other_input.setFocus()
             return
 
         airway = self.airway_input.text().strip()
